@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>典狱长格赫罗斯 - Beta 0.5.8</title>
+    <title>典狱长格赫罗斯 - 终极调优版</title>
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -38,46 +38,25 @@
             image-rendering: pixelated; 
         }
 
-        /* 界面覆盖层通用样式 */
-        .overlay {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            display: flex; flex-direction: column; justify-content: center; align-items: center;
-            color: #fff; text-align: center;
-            pointer-events: auto;
-        }
-
-        /* 启动封面：纯黑背景 */
         #startScreen {
-            background: #000000; /* 修正：全黑 */
-            z-index: 60;
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: #000;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            z-index: 50; color: #fff; text-align: center;
         }
-        
-        /* 结算界面：带淡入动画 */
-        #resultScreen {
-            background: rgba(0,0,0,0.9);
-            display: none; 
-            z-index: 70;
-            /* 修正：确保动画生效 */
-            animation: fadeIn 0.5s ease-in forwards;
-        }
-        
-        /* 简单的淡入动画 */
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-        
-        /* 文件上传提示 */
-        #fileInputOverlay {
-            background: rgba(0,0,0,0.95);
-            display: none;
-            z-index: 80;
-        }
-
         .blink { animation: blinker 1s linear infinite; }
         @keyframes blinker { 50% { opacity: 0; } }
 
-        .result-title { font-size: 40px; font-weight: bold; margin-bottom: 10px; text-shadow: 4px 4px #000; }
+        #resultScreen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9);
+            display: none; flex-direction: column; justify-content: center; align-items: center;
+            z-index: 100; color: #fff; text-align: center;
+            animation: fadeIn 0.5s ease-in;
+        }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        .result-title { font-size: 40px; font-weight: normal; margin-bottom: 10px; text-shadow: 4px 4px #000; }
         .result-desc { font-size: 16px; color: #ccc; line-height: 1.8; }
         .win-title { color: #0f0; }
         .lose-title { color: #f00; }
@@ -89,8 +68,11 @@
             image-rendering: pixelated;
         }
 
-        /* 隐藏元素 */
-        .hidden { display: none !important; }
+        #fileInputOverlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.95); display: none; 
+            flex-direction: column; justify-content: center; align-items: center; color: #fff; z-index: 40;
+        }
     </style>
 </head>
 <body>
@@ -98,22 +80,19 @@
 <div id="gameContainer">
     <canvas id="gameCanvas"></canvas>
 
-    <!-- 启动封面 -->
-    <div id="startScreen" class="overlay">
-        <div class="result-title" style="margin-bottom: 50px;">典狱长格赫罗斯</div>
-        <!-- 小字已删除 -->
-        <div id="pressStartBtn" class="blink" style="font-size: 24px; color: #ff0;">▶ 点击屏幕开始</div>
+    <div id="startScreen">
+        <div class="result-title" style="margin-bottom: 30px;">典狱长格赫罗斯</div>
+        <div id="loadingText" style="margin-bottom: 40px; color: #888;">正在初始化...</div>
+        <div id="pressStartBtn" class="blink" style="font-size: 24px; color: #ff0; display: none;">▶ 点击屏幕开始</div>
     </div>
 
-    <!-- 结算界面 -->
-    <div id="resultScreen" class="overlay">
+    <div id="resultScreen">
         <div id="resultTitle" class="result-title"></div>
         <div id="resultDesc" class="result-desc"></div>
         <button class="btn" onclick="restartGame()">再次尝试</button>
     </div>
 
-    <!-- 备用上传 -->
-    <div id="fileInputOverlay" class="overlay">
+    <div id="fileInputOverlay">
         <p style="font-size: 20px; margin-bottom: 20px;">未检测到 boss.png</p>
         <button class="btn" onclick="document.getElementById('manualLoader').click()">📂 载入图像</button>
         <input type="file" id="manualLoader" accept="image/*" style="display:none" onchange="handleManualLoad(this)">
@@ -123,8 +102,9 @@
 <script>
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
-    
     const startScreen = document.getElementById('startScreen');
+    const loadingText = document.getElementById('loadingText');
+    const pressStartBtn = document.getElementById('pressStartBtn');
     const resultScreen = document.getElementById('resultScreen');
     const fileOverlay = document.getElementById('fileInputOverlay');
     const resultTitle = document.getElementById('resultTitle');
@@ -135,23 +115,17 @@
     canvas.width = NES_W;
     canvas.height = NES_H;
 
-    // --- 资源加载 ---
     const bossImg = new Image();
     let isImageLoaded = false;
     
-    // 图片加载逻辑
-    bossImg.onload = function() { isImageLoaded = true; };
-    bossImg.onerror = function() { console.log("Image failed"); }; // 失败也不阻塞，只是没图
-    bossImg.src = 'boss.png'; 
-
-    // 音频系统
     const audioAssets = {
         bgm: new Audio('bgm.mp3'),
         shoot: new Audio('player_shoot.mp3'),
         hit: new Audio('boss_hit.mp3'),
         kill: new Audio('boss_kill.mp3')
     };
-    audioAssets.bgm.loop = true; audioAssets.bgm.volume = 1.0;
+    audioAssets.bgm.loop = true; 
+    audioAssets.bgm.volume = 1.0;
 
     function playSfx(name) {
         try {
@@ -161,8 +135,27 @@
                 clone.volume = 0.4; 
                 clone.play().catch(e => {});
             }
-        } catch(e) { console.log("Audio Error:", e); }
+        } catch(e) {}
     }
+
+    function forceReady() {
+        loadingText.style.display = 'none';
+        pressStartBtn.style.display = 'block';
+        init();
+        loop(0);
+    }
+
+    bossImg.onload = function() { 
+        isImageLoaded = true; 
+        fileOverlay.style.display = 'none';
+        forceReady();
+    };
+    bossImg.onerror = function() { 
+        forceReady();
+    };
+    bossImg.src = 'boss.png'; 
+    
+    setTimeout(forceReady, 500);
 
     function handleManualLoad(input) {
         if (input.files && input.files[0]) {
@@ -170,22 +163,23 @@
             reader.onload = function(e) { 
                 bossImg.src = e.target.result; 
                 fileOverlay.style.display = 'none';
+                isImageLoaded = true;
             }
             reader.readAsDataURL(input.files[0]);
         }
     }
 
-    // --- 游戏状态 ---
-    const STATE = { MENU: 0, WAITING: 1, AIMING: 2, FIRING: 3, ENEMY: 4, END: 5 };
+    // --- 游戏参数 ---
+    const STATE = { MENU: -1, INTRO: 0, WAITING: 1, AIMING: 2, FIRING: 3, ENEMY: 4, END: 5 };
     let currentState = STATE.MENU; 
     let frame = 0;
     
     let player = { hp: 100, max: 100 };
     let boss = { hp: 300, max: 300, flashTimer: 0, recoil: 0 }; 
     
-    let dialogue = "警告：前方高能反应！";
+    let dialogue = ""; 
+    let fullDialogue = "典狱长格赫罗斯出现了！";
     
-    // 修正：速度调回 11
     let bar = { w: 180, h: 14, y: 175, pos: 0, speed: 11, dir: 1, hitStart: 0, hitW: 16 };
     
     let shotCount = 0;
@@ -199,15 +193,16 @@
     let flashColor = '#eee';
     let dodgeAnim = 0;
     let uiSwayTimer = 0; 
+    let introTimer = 0;
+    
+    // 【修改点1】总时长改为 120帧 (2秒)
+    const INTRO_DURATION = 120; 
 
-    // FPS 锁定
     let lastTime = 0;
     const FPS = 60;
     const interval = 1000 / FPS;
 
-    // 启动
-    resetZone();
-    loop(0);
+    function init() { resetZone(); }
 
     function resetZone() {
         bar.hitStart = Math.floor(Math.random() * (bar.w - bar.hitW));
@@ -217,24 +212,19 @@
 
     function startGame() {
         startScreen.style.display = 'none';
-        // 强制重置结算画面显示，以便下次fadeIn能触发
-        resultScreen.style.display = 'none'; 
+        resultScreen.style.display = 'none';
         
-        // 如果图片还是没好（且不是手动加载模式），显示提示
-        if (!isImageLoaded && bossImg.src.endsWith('boss.png')) {
-             // 检查是否真的是加载失败，这里为了稳健，如果还没好就让它去
-             if (bossImg.naturalWidth === 0) {
-                 // 这里可以显示手动上传，但为了不打断流程，我们直接开始，游戏里会显示红块
-                 // 如果用户需要手动上传，可以在红块出现后刷新页面
-             }
-        }
+        currentState = STATE.INTRO;
+        introTimer = INTRO_DURATION;
+        dialogue = "";
+        fullDialogue = "典狱长格赫罗斯出现了！";
 
-        currentState = STATE.WAITING;
         audioAssets.bgm.currentTime = 0;
         audioAssets.bgm.play().catch(e=>{});
     }
 
     function restartGame() {
+        resultScreen.style.display = 'none';
         player.hp = 100;
         boss.hp = 300;
         particles = [];
@@ -244,28 +234,59 @@
         dodgeAnim = 0; uiSwayTimer = 0;
         boss.flashTimer = 0; boss.recoil = 0;
         
+        currentState = STATE.WAITING;
         dialogue = "重新接敌，保持警惕！";
         
-        startGame();
+        audioAssets.bgm.currentTime = 0;
+        audioAssets.bgm.play().catch(e=>{});
     }
 
-    // --- 逻辑 ---
     function update() {
         if (shake > 0) shake--;
         if (flash > 0) flash--;
         if (boss.flashTimer > 0) boss.flashTimer--;
+        
         if (boss.recoil > 0) boss.recoil *= 0.8;
         if (Math.abs(boss.recoil) < 0.5) boss.recoil = 0;
-        if (dodgeAnim !== 0) dodgeAnim *= 0.8;
+
+        if (dodgeAnim !== 0) {
+            dodgeAnim = dodgeAnim * 0.8;
+            if (Math.abs(dodgeAnim) < 1) dodgeAnim = 0;
+        }
+        
         if (uiSwayTimer > 0) uiSwayTimer--;
 
         updateParticles();
 
         if (currentState === STATE.MENU || currentState === STATE.END) return;
 
+        // === 【修改点2】开场演出逻辑 ===
+        if (currentState === STATE.INTRO) {
+            introTimer--;
+            
+            // 计算已经过去的时间
+            const elapsed = INTRO_DURATION - introTimer;
+            
+            // 文字只用 1秒 (60帧) 显示完
+            const textDuration = 60; 
+            let textProgress = elapsed / textDuration;
+            if (textProgress > 1) textProgress = 1;
+            
+            const charCount = Math.floor(textProgress * fullDialogue.length);
+            dialogue = fullDialogue.substring(0, charCount);
+
+            // 2秒结束后进入战斗
+            if (introTimer <= 0) {
+                currentState = STATE.WAITING;
+                dialogue = "准备战斗！"; 
+            }
+            return;
+        }
+
         if (currentState === STATE.AIMING) {
             bar.pos += bar.speed * bar.dir;
-            if (bar.pos >= bar.w || bar.pos <= 0) bar.dir *= -1;
+            if (bar.pos >= bar.w) { bar.pos = bar.w; bar.dir = -1; }
+            if (bar.pos <= 0) { bar.pos = 0; bar.dir = 1; }
         }
         else if (currentState === STATE.FIRING) {
             shotTimer--;
@@ -372,12 +393,8 @@
                 shake = 8; boss.recoil = 5; 
                 spawnHitSparks(tx, ty, 5, '#fd0');
             }
-            
             playSfx('hit');
-
-            if (boss.hp <= 0) {
-                endGame(true);
-            }
+            if (boss.hp <= 0) endGame(true);
 
         } else {
             spawnParticle('text', "MISS", tx, ty, '#888');
@@ -387,7 +404,6 @@
     function endGame(isWin) {
         if (currentState === STATE.END) return;
         currentState = STATE.END;
-        
         if(audioAssets.bgm) audioAssets.bgm.pause();
 
         setTimeout(() => {
@@ -401,6 +417,7 @@
         if (type === 'player_miss' || type === 'player_dodge' || type === 'player_hurt') { p.life = 50; p.maxLife = 50; }
         particles.push(p);
     }
+
     function spawnHitSparks(x, y, count, color) {
         for(let i=0; i<count; i++) {
             const angle = Math.random() * Math.PI * 2;
@@ -408,12 +425,17 @@
             particles.push({ type: 'spark', life: 20, x: x, y: y, vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed, color: color });
         }
     }
-    function spawnPixelExplosion(x, y) { particles.push({ type: 'nes_boom', x: x, y: y, life: 12, maxLife: 12, scale: 1, color: '#fff' }); }
+
+    function spawnPixelExplosion(x, y) {
+        particles.push({ type: 'nes_boom', x: x, y: y, life: 12, maxLife: 12, scale: 1, color: '#fff' });
+    }
+
     function spawnDeathBoom(x, y) {
         particles.push({ type: 'nes_boom', x: x, y: y, life: 20, maxLife: 20, scale: 3, color: '#f00' });
         particles.push({ type: 'nes_boom', x: x-20, y: y+20, life: 25, maxLife: 25, scale: 2, color: '#000' });
         particles.push({ type: 'nes_boom', x: x+20, y: y-20, life: 25, maxLife: 25, scale: 2, color: '#500' });
     }
+
     function updateParticles() {
         for(let i=particles.length-1; i>=0; i--) {
             let p = particles[i];
@@ -425,9 +447,9 @@
             if (p.life <= 0) particles.splice(i, 1);
         }
     }
+
     function drawParticles() {
         particles.forEach(p => {
-            // 统一设置字体
             ctx.font = "12px 'DotGothic16', sans-serif"; 
             if (p.type === 'text') {
                 ctx.save(); ctx.fillStyle = p.color; ctx.textAlign = "center"; ctx.strokeStyle = "#000"; ctx.lineWidth = 2;
@@ -480,24 +502,15 @@
     }
 
     function showResult(isWin) {
-        // 强制显示，重置动画
-        resultScreen.style.display = 'none';
-        resultScreen.offsetHeight; /* trigger reflow */
         resultScreen.style.display = 'flex';
-        
         const titleDiv = document.getElementById('resultTitle');
         const descDiv = document.getElementById('resultDesc');
-        
         if (isWin) {
             if (player.hp === 100) titleDiv.innerText = "完美无瑕的胜利";
             else titleDiv.innerText = "奇迹般的胜利";
             titleDiv.className = "result-title win-title";
-            
             let rank = "B";
-            if (player.hp === 100) rank = "S+";
-            else if (player.hp >= 66) rank = "S";
-            else if (player.hp >= 32) rank = "A+";
-            
+            if (player.hp === 100) rank = "S+"; else if (player.hp >= 66) rank = "S"; else if (player.hp >= 32) rank = "A+";
             descDiv.innerHTML = `剩余生命: ${player.hp}%<br>你击败了典狱长格赫罗斯<br>评价: <span style="color:#ff0; font-size:20px;">${rank}</span>`;
         } else {
             titleDiv.innerText = "彻底的绝望";
@@ -546,11 +559,14 @@
         if (isImageLoaded) {
             let bx = (Math.random()-0.5) * boss.recoil; let by = (Math.random()-0.5) * boss.recoil;
             ctx.save(); ctx.translate(bx, by); 
+            // 【修改点3】Intro 阶段 Boss 渐显 (2秒)
+            if (currentState === STATE.INTRO) {
+                ctx.globalAlpha = 1 - (introTimer / INTRO_DURATION);
+            }
             if (boss.flashTimer > 0) { ctx.filter = "brightness(500%)"; drawBossImage(); ctx.filter = "none"; } 
             else { drawBossImage(); }
             ctx.restore();
         } else {
-            // 红色方块占位
             ctx.fillStyle = "#a00"; ctx.fillRect(NES_W/2 - 20, 45, 40, 80);
         }
 
@@ -565,15 +581,17 @@
         let isPlayerTurn = (currentState === STATE.WAITING || currentState === STATE.AIMING || currentState === STATE.FIRING);
         let isBossTurn = (currentState === STATE.ENEMY);
 
-        if (isBossTurn) {
-            ctx.fillStyle = "#000"; ctx.fillRect(10, boxY - 16, 64, 16);
-            ctx.strokeStyle = "#fff"; ctx.strokeRect(10, boxY - 16, 64, 16);
-            ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.fillText("格赫罗斯", 10 + 32, boxY - 3);
-        }
-        if (isPlayerTurn) {
-            ctx.fillStyle = "#000"; ctx.fillRect(NES_W - 10 - 36, boxY - 16, 36, 16);
-            ctx.strokeStyle = "#fff"; ctx.strokeRect(NES_W - 10 - 36, boxY - 16, 36, 16);
-            ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.fillText("玩家", NES_W - 10 - 18, boxY - 3);
+        if (currentState !== STATE.INTRO) {
+            if (isBossTurn) {
+                ctx.fillStyle = "#000"; ctx.fillRect(10, boxY - 16, 64, 16);
+                ctx.strokeStyle = "#fff"; ctx.strokeRect(10, boxY - 16, 64, 16);
+                ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.fillText("格赫罗斯", 10 + 32, boxY - 3);
+            }
+            if (isPlayerTurn) {
+                ctx.fillStyle = "#000"; ctx.fillRect(NES_W - 10 - 36, boxY - 16, 36, 16);
+                ctx.strokeStyle = "#fff"; ctx.strokeRect(NES_W - 10 - 36, boxY - 16, 36, 16);
+                ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.fillText("玩家", NES_W - 10 - 18, boxY - 3);
+            }
         }
 
         ctx.textAlign = "right"; 
@@ -581,14 +599,22 @@
         drawBar(NES_W - 60, boxY + 10, 40, 6, player.hp, player.max, hpColor);
         ctx.fillStyle = "#fff"; ctx.fillText("HP", NES_W - 65, boxY + 16);
 
-        ctx.fillStyle = "#fff"; ctx.textAlign = "left"; ctx.fillText(dialogue, 20, boxY + 25);
+        // 【修改点4】Intro 阶段文字居中
+        ctx.fillStyle = "#fff"; ctx.textAlign = "left"; 
+        if (currentState === STATE.INTRO) {
+            ctx.textAlign = "center"; ctx.fillText(dialogue, NES_W/2, boxY + 35);
+        } else {
+            ctx.fillText(dialogue, 20, boxY + 25);
+        }
         
-        if (currentState !== STATE.ENEMY && currentState !== STATE.END) {
+        if (currentState !== STATE.ENEMY && currentState !== STATE.END && currentState !== STATE.INTRO) {
             const bx = (NES_W - bar.w)/2; const by = boxY + 45; 
             ctx.fillStyle = "#000"; ctx.fillRect(bx, by, bar.w, bar.h);
             ctx.strokeStyle = "#666"; ctx.lineWidth = 1; ctx.strokeRect(bx, by, bar.w, bar.h);
             ctx.fillStyle = "#fff"; ctx.fillRect(bx + bar.hitStart, by+1, bar.hitW, bar.h-2);
-            ctx.fillStyle = "#f00"; ctx.fillRect(bx + bar.pos - 2, by-1, 5, bar.h+2);
+            let drawPos = bar.pos;
+            if(drawPos < 0) drawPos = 0; if(drawPos > bar.w) drawPos = bar.w;
+            ctx.fillStyle = "#f00"; ctx.fillRect(bx + drawPos - 2, by-1, 5, bar.h+2);
         }
         ctx.restore();
     }
@@ -616,6 +642,8 @@
             startGame();
             return;
         }
+        
+        if (currentState === STATE.INTRO) return;
 
         if (currentState === STATE.WAITING) {
             currentState = STATE.AIMING;
