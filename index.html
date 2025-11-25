@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>典狱长格赫罗斯 - 终极调优版</title>
+    <title>典狱长格赫罗斯 Beta 0.6.5</title>
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -20,7 +20,7 @@
             overflow: hidden;
             touch-action: none;
             user-select: none;
-            font-family: 'DotGothic16', 'Courier New', monospace; 
+            font-family: 'DotGothic16', sans-serif; 
         }
 
         #gameContainer {
@@ -64,7 +64,7 @@
         .btn {
             border: 2px solid #fff; background: #222; color: #fff;
             padding: 12px 24px; font-size: 18px; margin-top: 20px; 
-            font-family: inherit; cursor: pointer;
+            font-family: 'DotGothic16', sans-serif; cursor: pointer;
             image-rendering: pixelated;
         }
 
@@ -80,18 +80,21 @@
 <div id="gameContainer">
     <canvas id="gameCanvas"></canvas>
 
+    <!-- 启动封面 -->
     <div id="startScreen">
         <div class="result-title" style="margin-bottom: 30px;">典狱长格赫罗斯</div>
         <div id="loadingText" style="margin-bottom: 40px; color: #888;">正在初始化...</div>
         <div id="pressStartBtn" class="blink" style="font-size: 24px; color: #ff0; display: none;">▶ 点击屏幕开始</div>
     </div>
 
+    <!-- 结算界面 -->
     <div id="resultScreen">
         <div id="resultTitle" class="result-title"></div>
         <div id="resultDesc" class="result-desc"></div>
         <button class="btn" onclick="restartGame()">再次尝试</button>
     </div>
 
+    <!-- 备用上传 -->
     <div id="fileInputOverlay">
         <p style="font-size: 20px; margin-bottom: 20px;">未检测到 boss.png</p>
         <button class="btn" onclick="document.getElementById('manualLoader').click()">📂 载入图像</button>
@@ -115,29 +118,46 @@
     canvas.width = NES_W;
     canvas.height = NES_H;
 
+    // --- 资源加载 ---
     const bossImg = new Image();
     let isImageLoaded = false;
     
+    // === 音频资源 (单例对象) ===
     const audioAssets = {
         bgm: new Audio('bgm.mp3'),
         shoot: new Audio('player_shoot.mp3'),
         hit: new Audio('boss_hit.mp3'),
         kill: new Audio('boss_kill.mp3')
     };
-    audioAssets.bgm.loop = true; 
-    audioAssets.bgm.volume = 1.0;
 
+    audioAssets.bgm.loop = true;     
+    audioAssets.bgm.volume = 1.0; 
+    // 预加载
+    for (let k in audioAssets) audioAssets[k].preload = 'auto';
+
+    // === 恢复克隆逻辑 (Clone Mode) ===
+    // 这是你最喜欢的逻辑：可以无限叠加音效
     function playSfx(name) {
-        try {
-            const original = audioAssets[name];
-            if (original) {
-                const clone = original.cloneNode();
-                clone.volume = 0.4; 
-                clone.play().catch(e => {});
-            }
-        } catch(e) {}
+        const original = audioAssets[name];
+        if (original) {
+            // 克隆一个新的音频节点进行播放
+            const clone = original.cloneNode();
+            clone.volume = 0.4; // 统一 40% 音量
+            
+            // 播放，播放完自动销毁（虽然JS会自动回收，但加上这行逻辑更清晰）
+            clone.play()
+                .then(() => {
+                    // 播放成功
+                })
+                .catch(e => {
+                    // 如果克隆播放失败(极少情况)，尝试用原始对象兜底
+                    original.currentTime = 0;
+                    original.play().catch(err=>{});
+                });
+        }
     }
 
+    // --- 图片加载逻辑 (保留救砖版) ---
     function forceReady() {
         loadingText.style.display = 'none';
         pressStartBtn.style.display = 'block';
@@ -150,11 +170,8 @@
         fileOverlay.style.display = 'none';
         forceReady();
     };
-    bossImg.onerror = function() { 
-        forceReady();
-    };
+    bossImg.onerror = function() { forceReady(); };
     bossImg.src = 'boss.png'; 
-    
     setTimeout(forceReady, 500);
 
     function handleManualLoad(input) {
@@ -177,7 +194,7 @@
     let player = { hp: 100, max: 100 };
     let boss = { hp: 300, max: 300, flashTimer: 0, recoil: 0 }; 
     
-    let dialogue = ""; 
+    let dialogue = "警告：前方高能反应！";
     let fullDialogue = "典狱长格赫罗斯出现了！";
     
     let bar = { w: 180, h: 14, y: 175, pos: 0, speed: 11, dir: 1, hitStart: 0, hitW: 16 };
@@ -194,8 +211,6 @@
     let dodgeAnim = 0;
     let uiSwayTimer = 0; 
     let introTimer = 0;
-    
-    // 【修改点1】总时长改为 120帧 (2秒)
     const INTRO_DURATION = 120; 
 
     let lastTime = 0;
@@ -237,45 +252,40 @@
         currentState = STATE.WAITING;
         dialogue = "重新接敌，保持警惕！";
         
-        audioAssets.bgm.currentTime = 0;
-        audioAssets.bgm.play().catch(e=>{});
+        // 重开时确保BGM播放
+        if(audioAssets.bgm.paused) {
+            audioAssets.bgm.currentTime = 0;
+            audioAssets.bgm.play().catch(e=>{});
+        }
     }
 
     function update() {
+        // === BGM 守护进程 (Watchdog) ===
+        // 手机上如果音效太多，BGM可能会被挤掉。这里每帧检查，如果停了且不是在结算，就强行拉起
+        if (currentState !== STATE.MENU && currentState !== STATE.END) {
+            if (audioAssets.bgm.paused && audioAssets.bgm.currentTime > 0) {
+                // 尝试恢复，不重置进度
+                audioAssets.bgm.play().catch(e=>{});
+            }
+        }
+
         if (shake > 0) shake--;
         if (flash > 0) flash--;
         if (boss.flashTimer > 0) boss.flashTimer--;
-        
         if (boss.recoil > 0) boss.recoil *= 0.8;
         if (Math.abs(boss.recoil) < 0.5) boss.recoil = 0;
-
-        if (dodgeAnim !== 0) {
-            dodgeAnim = dodgeAnim * 0.8;
-            if (Math.abs(dodgeAnim) < 1) dodgeAnim = 0;
-        }
-        
+        if (dodgeAnim !== 0) dodgeAnim *= 0.8;
         if (uiSwayTimer > 0) uiSwayTimer--;
 
         updateParticles();
 
         if (currentState === STATE.MENU || currentState === STATE.END) return;
 
-        // === 【修改点2】开场演出逻辑 ===
         if (currentState === STATE.INTRO) {
             introTimer--;
-            
-            // 计算已经过去的时间
-            const elapsed = INTRO_DURATION - introTimer;
-            
-            // 文字只用 1秒 (60帧) 显示完
-            const textDuration = 60; 
-            let textProgress = elapsed / textDuration;
-            if (textProgress > 1) textProgress = 1;
-            
-            const charCount = Math.floor(textProgress * fullDialogue.length);
+            const progress = 1 - (introTimer / INTRO_DURATION);
+            const charCount = Math.floor(progress * fullDialogue.length);
             dialogue = fullDialogue.substring(0, charCount);
-
-            // 2秒结束后进入战斗
             if (introTimer <= 0) {
                 currentState = STATE.WAITING;
                 dialogue = "准备战斗！"; 
@@ -332,6 +342,7 @@
                     shake = 50; flash = 40; flashColor = '#f00';
                     spawnParticle('mega_text', "-9999999", NES_W - 90, NES_H - 30, '#f00');
                     dialogue = "绝望降临！！！";
+                    
                     playSfx('kill');
                     
                     endGame(false);
@@ -346,6 +357,7 @@
                     shake = 25; flash = 12; flashColor = '#f00';
                     spawnParticle('player_hurt', "-" + dmg, NES_W - 40, NES_H - 35, '#ff3333');
                     dialogue = "装甲严重受损！";
+                    
                     playSfx('hit');
 
                     if (player.hp <= 0) {
@@ -393,8 +405,13 @@
                 shake = 8; boss.recoil = 5; 
                 spawnHitSparks(tx, ty, 5, '#fd0');
             }
+            
+            // 这里只播放命中音效，射击音效在 update FIRING 里控制了
             playSfx('hit');
-            if (boss.hp <= 0) endGame(true);
+
+            if (boss.hp <= 0) {
+                endGame(true);
+            }
 
         } else {
             spawnParticle('text', "MISS", tx, ty, '#888');
@@ -411,10 +428,18 @@
         }, 1000);
     }
 
+    // --- 特效 ---
     function spawnParticle(type, text, x, y, color) {
-        let p = { type: type, life: 30, maxLife:30, x: x, y: y, text: text, color: color || '#fff', radius: 10, vx: 0, vy: 0 };
+        let p = { 
+            type: type, life: 30, maxLife:30, 
+            x: x, y: y, 
+            text: text, color: color || '#fff',
+            radius: 10, vx: 0, vy: 0 
+        };
         if (type === 'mega_text') { p.life = 60; p.maxLife = 60; }
-        if (type === 'player_miss' || type === 'player_dodge' || type === 'player_hurt') { p.life = 50; p.maxLife = 50; }
+        if (type === 'player_miss' || type === 'player_dodge' || type === 'player_hurt') { 
+            p.life = 50; p.maxLife = 50; 
+        }
         particles.push(p);
     }
 
@@ -422,7 +447,11 @@
         for(let i=0; i<count; i++) {
             const angle = Math.random() * Math.PI * 2;
             const speed = 2 + Math.random() * 4;
-            particles.push({ type: 'spark', life: 20, x: x, y: y, vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed, color: color });
+            particles.push({
+                type: 'spark', life: 20, x: x, y: y,
+                vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+                color: color
+            });
         }
     }
 
@@ -522,20 +551,16 @@
     function draw() {
         let renderX = 0;
         if (dodgeAnim !== 0) renderX = dodgeAnim;
-
         if (flash > 0 && Math.floor(frame/2)%2===0) ctx.fillStyle = flashColor;
         else ctx.fillStyle = '#050505';
         ctx.fillRect(0, 0, NES_W, NES_H);
 
         let dx = 0, dy = 0;
-        if (shake > 0) {
-            dx = (Math.random() - 0.5) * shake;
-            dy = (Math.random() - 0.5) * shake;
-        }
+        if (shake > 0) { dx = (Math.random()-0.5)*shake; dy = (Math.random()-0.5)*shake; }
 
         ctx.save();
         if (Math.abs(dodgeAnim) > 1) {
-            ctx.save(); ctx.translate(dx - dodgeAnim * 0.5, dy); 
+            ctx.save(); ctx.translate(dx - dodgeAnim*0.5, dy); 
             ctx.globalAlpha = 0.5; ctx.globalCompositeOperation = "lighter";
             drawUIContent(); ctx.restore();
         }
@@ -559,14 +584,12 @@
         if (isImageLoaded) {
             let bx = (Math.random()-0.5) * boss.recoil; let by = (Math.random()-0.5) * boss.recoil;
             ctx.save(); ctx.translate(bx, by); 
-            // 【修改点3】Intro 阶段 Boss 渐显 (2秒)
-            if (currentState === STATE.INTRO) {
-                ctx.globalAlpha = 1 - (introTimer / INTRO_DURATION);
-            }
+            if (currentState === STATE.INTRO) ctx.globalAlpha = 1 - (introTimer / INTRO_DURATION);
             if (boss.flashTimer > 0) { ctx.filter = "brightness(500%)"; drawBossImage(); ctx.filter = "none"; } 
             else { drawBossImage(); }
             ctx.restore();
         } else {
+            // 红色方块占位
             ctx.fillStyle = "#a00"; ctx.fillRect(NES_W/2 - 20, 45, 40, 80);
         }
 
@@ -599,9 +622,8 @@
         drawBar(NES_W - 60, boxY + 10, 40, 6, player.hp, player.max, hpColor);
         ctx.fillStyle = "#fff"; ctx.fillText("HP", NES_W - 65, boxY + 16);
 
-        // 【修改点4】Intro 阶段文字居中
         ctx.fillStyle = "#fff"; ctx.textAlign = "left"; 
-        if (currentState === STATE.INTRO) {
+        if(currentState === STATE.INTRO) {
             ctx.textAlign = "center"; ctx.fillText(dialogue, NES_W/2, boxY + 35);
         } else {
             ctx.fillText(dialogue, 20, boxY + 25);
@@ -625,7 +647,6 @@
         const x = (NES_W - drawW) / 2; const y = 45; 
         ctx.drawImage(bossImg, x, y, drawW, drawH);
     }
-
     function drawBar(x, y, w, h, val, max, color) {
         ctx.fillStyle = "#222"; ctx.fillRect(x, y, w, h);
         ctx.fillStyle = color;
@@ -642,8 +663,6 @@
             startGame();
             return;
         }
-        
-        if (currentState === STATE.INTRO) return;
 
         if (currentState === STATE.WAITING) {
             currentState = STATE.AIMING;
