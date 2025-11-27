@@ -325,6 +325,7 @@
     const INTRO_DURATION = 120; // 2秒开场动画
     let introFullText = "典狱长格赫罗斯出现了！";
     let bossIntroAlpha = 1;
+    let introDoneTimer = 0; // 打字机结束后额外停留时间计时
 
 
     let bar = {
@@ -382,6 +383,44 @@
         introFullText = "典狱长格赫罗斯出现了！";
         dialogue = "";
         bossIntroAlpha = 0;
+        introDoneTimer = 0;
+
+        audioAssets.bgm.currentTime = 0;
+        audioAssets.bgm.play().catch(() => {});
+    }
+
+    // 从通关画面进入专家模式：也播放一次BOSS入场动画 + 打字机
+    function startExpertIntro() {
+        // 关闭通关画面等UI
+        startScreen.style.display = 'none';
+        resultScreen.style.display = 'none';
+        expertPrompt.classList.add('hidden');
+        endingScreen.classList.add('hidden');
+
+        // 专家模式开局：完全重置玩家与BOSS状态
+        player.hp = player.max;
+        boss.hp = boss.max;
+        particles = [];
+
+        shake = 0;
+        flash = 0;
+        shotCount = 0;
+        shotTimer = 0;
+        dodgeAnim = 0;
+        uiSwayTimer = 0;
+        boss.flashTimer = 0;
+        boss.recoil = 0;
+
+        resetZone();
+
+        isExpertMode = true;
+
+        currentState = STATE.INTRO;
+        introTimer = INTRO_DURATION;
+        introFullText = "典狱长格赫罗斯出现了！";
+        dialogue = "";
+        bossIntroAlpha = 0;
+        introDoneTimer = 0;
 
         audioAssets.bgm.currentTime = 0;
         audioAssets.bgm.play().catch(() => {});
@@ -412,6 +451,7 @@
         currentState = STATE.WAITING;
         dialogue = "准备战斗！";
         introTimer = 0;
+        introDoneTimer = 0;
         bossIntroAlpha = 1;
 
         if (audioAssets.bgm) {
@@ -540,9 +580,7 @@
 
     endingBtnExpert.addEventListener('click', function (e) {
         e.stopPropagation();
-        endingScreen.classList.add('hidden');
-        isExpertMode = true;
-        restartGame();
+        startExpertIntro();
     });
 
     endingBtnTitle.addEventListener('click', function (e) {
@@ -563,18 +601,31 @@
 
         if (currentState === STATE.MENU || currentState === STATE.END) return;
 
-        // BOSS 入场动画 + 打字机字幕
+        // BOSS 入场动画 + 打字机字幕（字出完后额外停留1秒再进入战斗）
         if (currentState === STATE.INTRO) {
-            introTimer--;
-            const progress = Math.max(0, 1 - introTimer / INTRO_DURATION);
-            bossIntroAlpha = progress;
-            const charCount = Math.floor(progress * introFullText.length);
-            dialogue = introFullText.substring(0, charCount);
+            if (introTimer > 0) {
+                introTimer--;
+                const progress = Math.max(0, 1 - introTimer / INTRO_DURATION);
+                bossIntroAlpha = progress;
+                const charCount = Math.floor(progress * introFullText.length);
+                dialogue = introFullText.substring(0, charCount);
 
-            if (introTimer <= 0) {
+                if (introTimer <= 0) {
+                    // 打字机刚刚结束：锁定为完整句子，并开始额外停留计时
+                    introTimer = 0;
+                    bossIntroAlpha = 1;
+                    dialogue = introFullText;
+                    introDoneTimer = 0;
+                }
+            } else {
+                // 已经打完全部文字，保持整句显示，并累计停留时间
                 bossIntroAlpha = 1;
-                currentState = STATE.WAITING;
-                dialogue = "准备战斗！";
+                dialogue = introFullText;
+                introDoneTimer++;
+                if (introDoneTimer >= 60) { // 约1秒后进入战斗
+                    currentState = STATE.WAITING;
+                    dialogue = "准备战斗！";
+                }
             }
             return;
         }
