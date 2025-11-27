@@ -469,6 +469,13 @@
 
         endingLines.innerHTML =
             '<div class="ending-line fade-in-slow">你成功击退了典狱长格赫罗斯</div>';
+
+        // 移动端兼容：文字出现后，自动显示两个按钮
+        setTimeout(function () {
+            if (endingMode === 'normal') {
+                endingButtons.classList.remove('hidden');
+            }
+        }, 800);
     }
 
     // 通关画面：专家模式
@@ -491,13 +498,12 @@
         }, 2400); // 三行依次淡入后再出现提示
     }
 
-    // endingScreen 点击 / 触摸 逻辑（兼容移动端）
-    function handleEndingOverlayTap(e) {
-        // 按钮自己的点击事件单独处理，这里只关心空白区域 / 文本点击
-        if (e && e.target && e.target.tagName === 'BUTTON') return;
+    // endingScreen 点击逻辑
+    function handleEndingOverlayClick(e) {
+        if (e.target.tagName === 'BUTTON') return;
 
         if (endingMode === 'normal') {
-            // 再点击一次，显示两个按钮
+            // 再点击一次，显示两个按钮（PC 端为主；移动端已经有自动出现逻辑）
             if (endingButtons.classList.contains('hidden')) {
                 endingButtons.classList.remove('hidden');
             }
@@ -507,12 +513,11 @@
         }
     }
 
-    endingScreen.addEventListener('click', handleEndingOverlayTap);
-    endingScreen.addEventListener('touchstart', function (e) {
-        // 防止移动端 touchstart 不触发 click 的情况
-        e.preventDefault();
-        handleEndingOverlayTap(e);
-    }, { passive: false });
+    endingScreen.addEventListener('click', handleEndingOverlayClick);
+    endingScreen.addEventListener('touchend', function (e) {
+        // 部分移动端只触发 touchend，不触发 click
+        handleEndingOverlayClick(e);
+    });
 
     endingBtnExpert.addEventListener('click', function (e) {
         e.stopPropagation();
