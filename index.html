@@ -313,7 +313,7 @@
     }
 
     // 状态
-    const STATE = {MENU: 0, WAITING: 1, AIMING: 2, FIRING: 3, ENEMY: 4, END: 5};
+    const STATE = {MENU: 0, INTRO: 1, WAITING: 2, AIMING: 3, FIRING: 4, ENEMY: 5, END: 6};
     let currentState = STATE.MENU;
     let frame = 0;
 
@@ -321,6 +321,11 @@
     let boss = {hp: 300, max: 300, flashTimer: 0, recoil: 0};
 
     let dialogue = "警告：前方高能反应！";
+    let introTimer = 0;
+    const INTRO_DURATION = 120; // 2秒开场动画
+    let introFullText = "典狱长格赫罗斯出现了！";
+    let bossIntroAlpha = 1;
+
 
     let bar = {
         w: 180,
@@ -372,14 +377,18 @@
         expertPrompt.classList.add('hidden');
         endingScreen.classList.add('hidden');
 
-        currentState = STATE.WAITING;
-        dialogue = "准备战斗！";
+        currentState = STATE.INTRO;
+        introTimer = INTRO_DURATION;
+        introFullText = "典狱长格赫罗斯出现了！";
+        dialogue = "";
+        bossIntroAlpha = 0;
 
         audioAssets.bgm.currentTime = 0;
         audioAssets.bgm.play().catch(() => {});
     }
 
     function restartGame() {
+        // 再战：不再播放BOSS入场动画，直接开打
         resultScreen.style.display = 'none';
         expertPrompt.classList.add('hidden');
         endingScreen.classList.add('hidden');
@@ -398,7 +407,17 @@
         boss.recoil = 0;
 
         resetZone();
-        startGame();
+
+        // 直接进入战斗状态
+        currentState = STATE.WAITING;
+        dialogue = "准备战斗！";
+        introTimer = 0;
+        bossIntroAlpha = 1;
+
+        if (audioAssets.bgm) {
+            audioAssets.bgm.currentTime = 0;
+            audioAssets.bgm.play().catch(() => {});
+        }
     }
 
     function gotoTitle() {
@@ -543,6 +562,22 @@
         updateParticles();
 
         if (currentState === STATE.MENU || currentState === STATE.END) return;
+
+        // BOSS 入场动画 + 打字机字幕
+        if (currentState === STATE.INTRO) {
+            introTimer--;
+            const progress = Math.max(0, 1 - introTimer / INTRO_DURATION);
+            bossIntroAlpha = progress;
+            const charCount = Math.floor(progress * introFullText.length);
+            dialogue = introFullText.substring(0, charCount);
+
+            if (introTimer <= 0) {
+                bossIntroAlpha = 1;
+                currentState = STATE.WAITING;
+                dialogue = "准备战斗！";
+            }
+            return;
+        }
 
         if (currentState === STATE.AIMING) {
             bar.pos += bar.speed * bar.dir;
@@ -1092,10 +1127,17 @@
         ctx.fillText("HP", NES_W - 65, boxY + 16);
 
         ctx.fillStyle = "#fff";
-        ctx.textAlign = "left";
-        ctx.fillText(dialogue, 20, boxY + 25);
+        if (currentState === STATE.INTRO) {
+            // BOSS 入场对白：在对话框内完全居中（横向 + 纵向）
+            ctx.textAlign = "center";
+            const centerY = boxY + boxH / 2;
+            ctx.fillText(dialogue, NES_W / 2, centerY);
+        } else {
+            ctx.textAlign = "left";
+            ctx.fillText(dialogue, 20, boxY + 25);
+        }
 
-        if (currentState !== STATE.ENEMY && currentState !== STATE.END) {
+        if (currentState !== STATE.ENEMY && currentState !== STATE.END && currentState !== STATE.INTRO) {
             const bx = (NES_W - bar.w) / 2;
             const by = boxY + 45;
 
@@ -1186,6 +1228,11 @@
         const centerY = y + drawH / 2;
 
         ctx.save();
+
+        // 开场渐显
+        if (currentState === STATE.INTRO) {
+            ctx.globalAlpha = bossIntroAlpha;
+        }
 
         if (isExpertMode) {
             ctx.save();
