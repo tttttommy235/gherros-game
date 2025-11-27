@@ -361,6 +361,7 @@
 
     // 通关模式：normal / expert / null
     let endingMode = null;
+    let expertEndingReady = false;
 
     resetZone();
     loop(0);
@@ -534,12 +535,13 @@
             if (endingMode === 'normal') {
                 endingButtons.classList.remove('hidden');
             }
-        }, 800);
+        }, 2500);
     }
 
     // 通关画面：专家模式
     function showExpertEnding() {
         endingMode = 'expert';
+        expertEndingReady = false;
         endingScreen.classList.remove('hidden');
         endingButtons.classList.add('hidden');
 
@@ -552,6 +554,7 @@
         endingHint.classList.add('hidden');
         setTimeout(function () {
             if (endingMode === 'expert') {
+                expertEndingReady = true;
                 endingHint.classList.remove('hidden');
             }
         }, 2400); // 三行依次淡入后再出现提示
@@ -567,8 +570,10 @@
                 endingButtons.classList.remove('hidden');
             }
         } else if (endingMode === 'expert') {
-            // 专家模式通关：点击任意位置回到封面
-            gotoTitle();
+            // 专家模式通关：只有在文字全部出现完毕后，点击才会回到封面
+            if (expertEndingReady) {
+                gotoTitle();
+            }
         }
     }
 
