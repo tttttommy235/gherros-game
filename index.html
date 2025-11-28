@@ -61,6 +61,12 @@
         #startScreen {
             background: #000000;
             z-index: 60;
+            display: none;
+        }
+
+        #loadingScreen {
+            background: #000;
+            z-index: 55;
         }
 
         /* 结算画面：半透明黑底，全屏遮罩 */
@@ -191,7 +197,18 @@
 <div id="gameContainer">
     <canvas id="gameCanvas"></canvas>
 
+        <!-- 读条/资源加载画面 -->
+    <div id="loadingScreen" class="overlay">
+        <div style="font-size: 20px; margin-bottom: 12px; text-shadow: 2px 2px #000;">
+            资源加载中…
+        </div>
+        <div id="loadingProgress" style="font-size: 14px; color: #ccc;">
+            0%
+        </div>
+    </div>
+
     <!-- 封面 -->
+
     <div id="startScreen" class="overlay">
         <div class="result-title" style="margin-bottom: 50px;">典狱长格赫罗斯</div>
         <div id="pressStartBtn" class="blink" style="font-size: 24px; color: #ff0;">
@@ -270,11 +287,35 @@
     const bossImg = new Image();
     let isImageLoaded = false;
 
+    // 资源读条相关
+    let assetsLoaded = 0;
+    const assetsNeeded = 1; // 目前只严格等待 boss.png 图片
+    let assetsReady = false;
+
+    const loadingScreen = document.getElementById('loadingScreen');
+    const loadingProgress = document.getElementById('loadingProgress');
+
+    function onAssetLoaded() {
+        assetsLoaded++;
+        const pct = Math.min(100, Math.floor((assetsLoaded / assetsNeeded) * 100));
+        if (loadingProgress) {
+            loadingProgress.textContent = pct + "%";
+        }
+        if (!assetsReady && assetsLoaded >= assetsNeeded) {
+            assetsReady = true;
+            if (loadingScreen) loadingScreen.classList.add('hidden');
+            if (startScreen) startScreen.style.display = 'flex';
+        }
+    }
+
+
     bossImg.onload = function () {
         isImageLoaded = true;
+        onAssetLoaded();
     };
     bossImg.onerror = function () {
         console.log("Image failed");
+        onAssetLoaded();
     };
     bossImg.src = 'boss.png';
 
@@ -293,7 +334,7 @@
             const original = audioAssets[name];
             if (original) {
                 const clone = original.cloneNode();
-                clone.volume = 0.4;
+                clone.volume = 0.25;
                 clone.play().catch(() => {});
             }
         } catch (e) {
@@ -482,9 +523,17 @@
         }
 
         currentState = STATE.MENU;
-        startScreen.style.display = 'flex';
         endingScreen.classList.add('hidden');
         resultScreen.style.display = 'none';
+
+        // 资源已加载完则直接显示封面，否则回到读条画面
+        if (assetsReady) {
+            startScreen.style.display = 'flex';
+            if (loadingScreen) loadingScreen.classList.add('hidden');
+        } else {
+            if (loadingScreen) loadingScreen.classList.remove('hidden');
+            startScreen.style.display = 'none';
+        }
     }
 
     // 结算按钮主逻辑
@@ -550,7 +599,7 @@
             '<div class="ending-line fade-in-slow fade-delay-1">你终于击败了典狱长格赫罗斯</div>' +
             '<div class="ending-line fade-in-slow fade-delay-2">成功从监狱逃离</div>';
 
-        // 先隐藏提示，等三行字都出现完再显示
+        // 先隐藏提示，等三行字都出现完毕后再显示
         endingHint.classList.add('hidden');
         setTimeout(function () {
             if (endingMode === 'expert') {
@@ -636,7 +685,8 @@
         }
 
         if (currentState === STATE.AIMING) {
-            bar.pos += bar.speed * bar.dir;
+            const cursorSpeed = isExpertMode ? 13 : 11;
+            bar.pos += cursorSpeed * bar.dir;
             if (bar.pos >= bar.w) {
                 bar.pos = bar.w;
                 bar.dir = -1;
@@ -673,7 +723,7 @@
                     if (boss.hp <= 0) {
                         endGame(true);
                     } else {
-                        dialogue = "格赫罗斯 正在聚能...";
+                        dialogue = "格赫罗斯 正在向你发起攻势";
                         currentState = STATE.ENEMY;
                         frame = 1;
                     }
@@ -687,11 +737,11 @@
                 if (!isExpertMode) {
                     if (roll < 0.15) {
                         spawnParticle('player_dodge', "闪避!", NES_W - 40, NES_H - 35, '#0ff');
-                        dialogue = "残影瞬移！";
+                        dialogue = "灵敏的躲开了攻击";
                         dodgeAnim = 30;
                     } else if (roll < 0.20) {
                         spawnParticle('player_miss', "MISS", NES_W - 40, NES_H - 35, '#0f0');
-                        dialogue = "攻击偏离！";
+                        dialogue = "格赫罗斯 并没有击中";
                         uiSwayTimer = 60;
                     } else if (roll < 0.30) {
                         const dmg = 9999999;
@@ -703,7 +753,7 @@
                         flash = 40;
                         flashColor = '#f00';
                         spawnParticle('mega_text', "-9999999", NES_W - 90, NES_H - 30, '#f00');
-                        dialogue = "绝望降临！！！";
+                        dialogue = "审判降临！！";
                         playSfx('kill');
 
                         endGame(false);
@@ -729,7 +779,7 @@
                 } else {
                     if (roll < 0.15) {
                         spawnParticle('player_dodge', "闪避!", NES_W - 40, NES_H - 35, '#0ff');
-                        dialogue = "残影瞬移！";
+                        dialogue = "灵敏的躲开了攻击";
                         dodgeAnim = 30;
                     } else if (roll < 0.33) {
                         const dmg = 9999999;
@@ -741,7 +791,7 @@
                         flash = 40;
                         flashColor = '#f00';
                         spawnParticle('mega_text', "-9999999", NES_W - 90, NES_H - 30, '#f00');
-                        dialogue = "绝望降临！！！";
+                        dialogue = "审判降临！！";
                         playSfx('kill');
 
                         endGame(false);
@@ -1049,7 +1099,7 @@
                 `你击败了典狱长格赫罗斯<br>` +
                 `评价: <span style="color:#ff0; font-size:20px;">${rank}</span>`;
         } else {
-            titleDiv.innerText = isExpertMode ? "无情的碾压" : "彻底的绝望";
+            titleDiv.innerText = "越狱失败";
             titleDiv.className = "result-title lose-title";
             descDiv.innerHTML =
                 `BOSS 剩余血量: ${boss.hp}<br>` +
@@ -1327,6 +1377,9 @@
         if (e.target.tagName === 'BUTTON') return;
         if (e.target.id === 'manualLoader') return;
         e.preventDefault();
+
+        // 资源未加载完成时，点击无效，避免在读条时就开始游戏
+        if (!assetsReady) return;
 
         if (currentState === STATE.MENU) {
             startGame();
