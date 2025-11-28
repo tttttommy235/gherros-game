@@ -61,12 +61,6 @@
         #startScreen {
             background: #000000;
             z-index: 60;
-            display: none;
-        }
-
-        #loadingScreen {
-            background: #000;
-            z-index: 55;
         }
 
         /* 结算画面：半透明黑底，全屏遮罩 */
@@ -197,22 +191,14 @@
 <div id="gameContainer">
     <canvas id="gameCanvas"></canvas>
 
-        <!-- 读条/资源加载画面 -->
-    <div id="loadingScreen" class="overlay">
-        <div style="font-size: 20px; margin-bottom: 12px; text-shadow: 2px 2px #000;">
-            资源加载中…
-        </div>
-        <div id="loadingProgress" style="font-size: 14px; color: #ccc;">
-            0%
-        </div>
-    </div>
-
     <!-- 封面 -->
-
     <div id="startScreen" class="overlay">
         <div class="result-title" style="margin-bottom: 50px;">典狱长格赫罗斯</div>
         <div id="pressStartBtn" class="blink" style="font-size: 24px; color: #ff0;">
             ▶ 点击屏幕开始
+        </div>
+        <div id="loadingHint" style="font-size: 14px; color: #ccc; margin-top: 12px; display: none;">
+            资源加载中… 0%
         </div>
     </div>
 
@@ -287,24 +273,33 @@
     const bossImg = new Image();
     let isImageLoaded = false;
 
-    // 资源读条相关
+    // 资源加载状态（当前只统计 boss.png）
     let assetsLoaded = 0;
-    const assetsNeeded = 1; // 目前只严格等待 boss.png 图片
+    const assetsNeeded = 1; // 未来如果有更多图片可以在这里 +1
     let assetsReady = false;
+    let isTitleLoading = false; // 标记：是否在标题画面等待资源加载
 
-    const loadingScreen = document.getElementById('loadingScreen');
-    const loadingProgress = document.getElementById('loadingProgress');
+    const loadingHint = document.getElementById('loadingHint');
+
+    function updateLoadingProgress() {
+        if (!loadingHint) return;
+        const pct = Math.min(100, Math.floor((assetsLoaded / assetsNeeded) * 100));
+        loadingHint.textContent = "资源加载中… " + pct + "%";
+    }
 
     function onAssetLoaded() {
         assetsLoaded++;
-        const pct = Math.min(100, Math.floor((assetsLoaded / assetsNeeded) * 100));
-        if (loadingProgress) {
-            loadingProgress.textContent = pct + "%";
-        }
-        if (!assetsReady && assetsLoaded >= assetsNeeded) {
+        if (assetsLoaded >= assetsNeeded) {
             assetsReady = true;
-            if (loadingScreen) loadingScreen.classList.add('hidden');
-            if (startScreen) startScreen.style.display = 'flex';
+            updateLoadingProgress();
+            // 如果此时玩家已经在标题画面点击过一次，就自动开始游戏
+            if (isTitleLoading) {
+                isTitleLoading = false;
+                if (loadingHint) loadingHint.style.display = "none";
+                startGame();
+            }
+        } else {
+            updateLoadingProgress();
         }
     }
 
@@ -523,17 +518,9 @@
         }
 
         currentState = STATE.MENU;
+        startScreen.style.display = 'flex';
         endingScreen.classList.add('hidden');
         resultScreen.style.display = 'none';
-
-        // 资源已加载完则直接显示封面，否则回到读条画面
-        if (assetsReady) {
-            startScreen.style.display = 'flex';
-            if (loadingScreen) loadingScreen.classList.add('hidden');
-        } else {
-            if (loadingScreen) loadingScreen.classList.remove('hidden');
-            startScreen.style.display = 'none';
-        }
     }
 
     // 结算按钮主逻辑
@@ -1378,11 +1365,18 @@
         if (e.target.id === 'manualLoader') return;
         e.preventDefault();
 
-        // 资源未加载完成时，点击无效，避免在读条时就开始游戏
-        if (!assetsReady) return;
-
         if (currentState === STATE.MENU) {
-            startGame();
+            // 第一次点击封面：如果资源还没加载完，先在封面下方显示“资源加载中…”
+            if (!assetsReady) {
+                isTitleLoading = true;
+                if (loadingHint) {
+                    loadingHint.style.display = "block";
+                    updateLoadingProgress();
+                }
+                return; // 等图片加载完后在 onAssetLoaded 里自动 startGame()
+            } else {
+                startGame();
+            }
             return;
         }
 
